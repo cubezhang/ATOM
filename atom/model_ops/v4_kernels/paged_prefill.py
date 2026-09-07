@@ -285,6 +285,7 @@ def _sparse_attn_v4_paged_prefill_csa_kernel(
     BLOCK_D: tl.constexpr,
     BLOCK_K: tl.constexpr,
     PREFIX_BLOCK_K: tl.constexpr,
+    ENABLE_DSV4_0731_OPTIMIZATIONS: tl.constexpr,
 ):
     # CSA-only fast path for DeepSeek-V4 D=512. It removes generic prefix/HCA
     # options from the shared kernel and keeps the proven BLOCK_K/PREFIX_BLOCK_K
@@ -315,7 +316,7 @@ def _sparse_attn_v4_paged_prefill_csa_kernel(
     p_end = tl.load(kv_indptr_prefix_ptr + t + 1)
     p_len = p_end - p_start
 
-    if _ENABLE_DSV4_0731_OPTIMIZATIONS:
+    if ENABLE_DSV4_0731_OPTIMIZATIONS:
         p_slot = tl.load(
             kv_indices_prefix_ptr + p_start + p_k_offs,
             mask=p_k_offs < p_len,
@@ -325,11 +326,11 @@ def _sparse_attn_v4_paged_prefill_csa_kernel(
         0,
         p_len,
         PREFIX_BLOCK_K,
-        loop_unroll_factor=(8 if _ENABLE_DSV4_0731_OPTIMIZATIONS else 1),
+        loop_unroll_factor=(8 if ENABLE_DSV4_0731_OPTIMIZATIONS else 1),
     ):
         k_pos = k_start + p_k_offs
         valid = k_pos < p_len
-        if _ENABLE_DSV4_0731_OPTIMIZATIONS:
+        if ENABLE_DSV4_0731_OPTIMIZATIONS:
             slot = p_slot
             next_k_pos = k_pos + PREFIX_BLOCK_K
             p_slot = tl.load(
@@ -365,7 +366,7 @@ def _sparse_attn_v4_paged_prefill_csa_kernel(
     e_end = tl.load(kv_indptr_extend_ptr + t + 1)
     e_len = e_end - e_start
 
-    if _ENABLE_DSV4_0731_OPTIMIZATIONS:
+    if ENABLE_DSV4_0731_OPTIMIZATIONS:
         e_slot = tl.load(
             kv_indices_extend_ptr + e_start + k_offs,
             mask=k_offs < e_len,
@@ -374,7 +375,7 @@ def _sparse_attn_v4_paged_prefill_csa_kernel(
     for e_k_start in tl.range(0, e_len, BLOCK_K):
         k_pos = e_k_start + k_offs
         valid = k_pos < e_len
-        if _ENABLE_DSV4_0731_OPTIMIZATIONS:
+        if ENABLE_DSV4_0731_OPTIMIZATIONS:
             slot = e_slot
             next_k_pos = k_pos + BLOCK_K
             e_slot = tl.load(
@@ -512,6 +513,7 @@ def _sparse_attn_v4_paged_prefill_triton(
             BLOCK_D=block_d,
             BLOCK_K=block_k,
             PREFIX_BLOCK_K=prefix_block_k,
+            ENABLE_DSV4_0731_OPTIMIZATIONS=_ENABLE_DSV4_0731_OPTIMIZATIONS,
             num_warps=num_warps,
             num_stages=num_stages,
             waves_per_eu=waves_per_eu,
