@@ -8,7 +8,21 @@ This recipe targets four MI308X GPUs and keeps the topology at TP4/DP1/PCP1. It 
 - TTFT improved in 53/54 scenarios, with a **60.50%** geometric-mean improvement.
 - TPOT improved in 54/54 scenarios, with a **58.23%** geometric-mean improvement.
 
-The complete recipe includes ATOM source changes, AITER kernel policies, measured tuning tables, a digest-pinned Dockerfile, and a production entrypoint.
+The complete recipe includes ATOM source changes, AITER kernel policies,
+measured tuning tables, a digest-pinned Dockerfile, and a production
+entrypoint. It can be deployed on another four-MI308X host without using paths
+or device IDs from the measured machine. The target host needs Docker, a
+compatible AMDGPU driver, four MI308X GPUs exposed through `/dev/kfd` and
+`/dev/dri`, and the `DeepSeek-V4-Flash-0731` model directory.
+
+Check out the PR on the target host:
+
+```bash
+git clone https://github.com/ROCm/ATOM.git
+cd ATOM
+git fetch origin pull/2086/head:pr-2086
+git checkout pr-2086
+```
 
 Build the image from the ATOM repository root:
 
@@ -18,10 +32,19 @@ docker build \
   -t dsv4-0731-atom:pr-repro .
 ```
 
-Start the server:
+Start the server. Set `MODEL_ROOT` to the host directory containing the
+`DeepSeek-V4-Flash-0731` directory. `GPU_IDS`, `SERVER_PORT`, and
+`CONTAINER_NAME` can be changed for the target host; the measured topology
+inside the container remains TP4/DP1.
+
+The recipe defaults to `NCCL_IB_GID_INDEX=3`. Export a different value before
+`docker run` if the target host uses another RoCE GID index.
 
 ```bash
-export MODEL_DIR=/volumes/oss1/models
+export MODEL_ROOT=/path/to/models
+export GPU_IDS=${GPU_IDS:-0,1,2,3}
+export SERVER_PORT=${SERVER_PORT:-8000}
+export CONTAINER_NAME=${CONTAINER_NAME:-atom_dsv4_0731_optimized}
 
 docker run -d \
   --ipc=host --network=host --privileged \
@@ -30,34 +53,19 @@ docker run -d \
   --security-opt seccomp=unconfined \
   --security-opt apparmor=unconfined \
   --group-add video --shm-size=128G \
-  --name atom_dsv4_0731_optimized \
-  -e HIP_VISIBLE_DEVICES=0,1,2,3 \
-  -v "$MODEL_DIR":/data/models \
+  --name "$CONTAINER_NAME" \
+  -e HIP_VISIBLE_DEVICES="$GPU_IDS" \
+  -e SERVER_PORT="$SERVER_PORT" \
+  -e NCCL_IB_GID_INDEX="${NCCL_IB_GID_INDEX:-3}" \
+  -v "$MODEL_ROOT":/data/models:ro \
   dsv4-0731-atom:pr-repro
 ```
 
-benchmark test:
+Monitor startup:
 
 ```bash
-docker exec atom_dsv4_0731_optimized \
-  python -m atom.benchmarks.benchmark_serving \
-    --model=DeepSeek-V4-Flash-0731 \
-    --backend=vllm \
-    --base-url=http://localhost:8000 \
-    --dataset-name=random \
-    --tokenizer=/data/models/DeepSeek-V4-Flash-0731 \
-    --random-input-len=1000 \
-    --random-output-len=1024 \
-    --random-range-ratio=1.0 \
-    --num-prompts=10 \
-    --max-concurrency=1 \
-    --request-rate=inf \
-    --ignore-eos \
-    --save-result \
-    --percentile-metrics=ttft,tpot,itl,e2el
+docker logs -f "$CONTAINER_NAME"
 ```
-
-This command runs only one short scenario. It verifies server availability and reports basic TTFT, TPOT, and throughput without relying on a private benchmark script. A performance matrix can be built by varying the concurrency, input length, and number of prompts.
 
 ## Representative Performance Results
 

@@ -4,13 +4,14 @@ set -euo pipefail
 export ATOM_DSV4_0731_OPTIMIZATIONS=${ATOM_DSV4_0731_OPTIMIZATIONS:-1}
 MODEL_PATH=${MODEL_PATH:-/data/models/DeepSeek-V4-Flash-0731}
 SERVED_MODEL_NAME=${SERVED_MODEL_NAME:-DeepSeek-V4-Flash-0731}
+SERVER_PORT=${SERVER_PORT:-8000}
 ONLINE_QUANT_CONFIG='{"layer_quant_config":{"*.experts":"per_block_fp8"}}'
 
 exec python -m atom.entrypoints.openai_server \
   --model "$MODEL_PATH" \
   --served-model-name "$SERVED_MODEL_NAME" \
   --host 0.0.0.0 \
-  --server-port 8000 \
+  --server-port "$SERVER_PORT" \
   --tensor-parallel-size 4 \
   --data-parallel-size 1 \
   --kv-cache-dtype bf16 \
